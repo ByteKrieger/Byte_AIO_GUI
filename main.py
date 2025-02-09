@@ -26,7 +26,6 @@ DARK_ORANGE = '#FF8C00'
 
 # Kategorien mit den entsprechenden Befehlen
 # Beachte: Befehle in "Bereinigung" und "DISM&Update" benötigen Administratorrechte.
-# Unter "DISM&Update" wurde der Befehl "Bereinigen Komponenten‑Speicher" zusammengefasst.
 command_groups = {
     "Bereinigung": {
         "Mülleimer leeren": {
@@ -55,6 +54,17 @@ command_groups = {
             ),
             "is_powershell": True,
             "requires_admin": False
+        },
+        "Exchange HealthCheck": {
+            # Hier wird die Datei von GitHub heruntergeladen und ausgeführt.
+            # Der Befehl ist nun als Administrator-Befehl markiert.
+            "command": (
+                "if (Test-Path \"$env:TEMP\\ExchangeHealthCheck.ps1\") { Remove-Item \"$env:TEMP\\ExchangeHealthCheck.ps1\" -Force }; "
+                "Invoke-WebRequest -Uri \"https://github.com/microsoft/CSS-Exchange/releases/latest/download/HealthChecker.ps1\" -OutFile \"$env:TEMP\\ExchangeHealthCheck.ps1\"; "
+                "& \"$env:TEMP\\ExchangeHealthCheck.ps1\""
+            ),
+            "is_powershell": True,
+            "requires_admin": True
         }
     },
     "DISM&Update": {
@@ -93,7 +103,7 @@ command_groups = {
 }
 
 # Funktion zum Erstellen von Buttons für jede Registerkarte.
-# Hier wird zusätzlich der Gruppenname übergeben, um bei "DISM&Update" den Button "Bereinigen Komponenten‑Speicher"
+# Hier wird zusätzlich der Gruppenname übergeben, um bei "DISM&Update" den Button "Bereinigen Komponenten-Speicher"
 # zusammen mit einer Checkbox in einer Zeile darzustellen.
 def create_buttons(command_group, group_name):
     rows = []
@@ -107,7 +117,7 @@ def create_buttons(command_group, group_name):
                 btn = sg.Button(button_text, auto_size_button=True, button_color=('red', 'black'), key=key)
             else:
                 btn = sg.Button(command_name, auto_size_button=True, button_color=(ORANGE, 'black'), key=key)
-            # Falls wir in der Kategorie DISM&Update sind und der Befehl "Bereinigen Komponenten‑Speicher" lautet,
+            # Falls wir in der Kategorie DISM&Update sind und der Befehl "Bereinigen Komponenten-Speicher" lautet,
             # wird in derselben Zeile eine Checkbox hinzugefügt.
             if group_name == "DISM&Update" and command_name == "Bereinigen Komponenten-Speicher":
                 row = [btn, sg.Checkbox("Mit Superseeded (ResetBase)", key="-SUPERSEDED-")]
@@ -163,11 +173,14 @@ def run_command(command, text, is_powershell=True, log_enabled=False):
         if log_enabled:
             log_filename = f"{text}_output.txt"
             if is_powershell:
-                # Mit Tee-Object: Ausgabe wird sowohl auf der Konsole angezeigt als auch in die Log-Datei geschrieben.
-                full_cmd = f'start "" powershell -NoExit -Command "{command} | Tee-Object -FilePath \'{log_filename}\'; Read-Host -Prompt \'Press Enter to exit\'; exit"'
+                full_cmd = (
+                    f'start "" powershell -NoExit -Command "{command} | Tee-Object -FilePath \'{log_filename}\'; '
+                    f'Read-Host -Prompt \'Press Enter to exit\'; exit"'
+                )
             else:
-                # Bei CMD: Leite die Ausgabe in die Log-Datei um, zeige diese dann an und warte auf Enter.
-                full_cmd = f'start "" cmd /c "{command} > \"{log_filename}\" 2>&1 & type \"{log_filename}\" & pause & exit"'
+                full_cmd = (
+                    f'start "" cmd /c "{command} > \"{log_filename}\" 2>&1 & type \"{log_filename}\" & pause & exit"'
+                )
         else:
             if is_powershell:
                 full_cmd = f'start "" powershell -NoExit -Command "{command}; Read-Host -Prompt \'Press Enter to exit\'; exit"'
