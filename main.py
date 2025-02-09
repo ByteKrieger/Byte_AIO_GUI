@@ -10,7 +10,6 @@ if not ctypes.windll.shell32.IsUserAnAdmin():
         "Möchten Sie das Programm jetzt als Administrator neu starten?"
     )
     if answer == "Yes":
-        # Neustart mit Administratorrechten
         ctypes.windll.shell32.ShellExecuteW(
             None, "runas", sys.executable, " ".join(sys.argv), None, 1
         )
@@ -20,7 +19,7 @@ if not ctypes.windll.shell32.IsUserAnAdmin():
 
 sg.theme('NeonYellow1')
 
-# Speichere das aktuelle Arbeitsverzeichnis (wird z. B. für FRST64 genutzt)
+# Speichere das aktuelle Arbeitsverzeichnis (z. B. für FRST64)
 working_dir = os.getcwd()
 
 # Farben
@@ -28,7 +27,6 @@ ORANGE = '#FFA500'
 DARK_ORANGE = '#FF8C00'
 
 # Kategorien mit den entsprechenden Befehlen
-# Beachte: Befehle in "Bereinigung", "DISM&Update", "Reparaturen" und manche Einträge in "Checks" benötigen Administratorrechte.
 command_groups = {
     "Bereinigung": {
         "Mülleimer leeren": {
@@ -75,6 +73,14 @@ command_groups = {
             ),
             "is_powershell": True,
             "requires_admin": True
+        },
+        "Programme abfragen": {
+            "command": (
+                "Get-ItemProperty HKLM:\\Software\\Wow6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\* | "
+                "Sort Displayname | Select-Object DisplayName, DisplayVersion, InstallDate, Publisher"
+            ),
+            "is_powershell": True,
+            "requires_admin": False
         }
     },
     "DISM&Update": {
@@ -145,24 +151,20 @@ command_groups = {
 }
 
 # Funktion zum Erstellen von Buttons für jede Registerkarte.
-# Zusätzlich wird der Gruppenname übergeben, um in den Kategorien "DISM&Update" und "Reparaturen"
-# entsprechende Checkboxen in derselben Zeile einzufügen.
 def create_buttons(command_group, group_name):
     rows = []
     if not command_group:
         rows.append([sg.Text("Keine Befehle definiert")])
     else:
         for command_name, command_info in command_group.items():
-            key = command_name  # Reiner Befehlsname als Key
+            key = command_name
             if command_info.get("requires_admin"):
                 button_text = command_name + " *"
                 btn = sg.Button(button_text, auto_size_button=True, button_color=('red', 'black'), key=key)
             else:
                 btn = sg.Button(command_name, auto_size_button=True, button_color=(ORANGE, 'black'), key=key)
-            # Für DISM&Update: Beim Befehl "Bereinigen Komponenten-Speicher" wird eine Checkbox hinzugefügt.
             if group_name == "DISM&Update" and command_name == "Bereinigen Komponenten-Speicher":
                 row = [btn, sg.Checkbox("Mit Superseeded (ResetBase)", key="-SUPERSEDED-")]
-            # Für Reparaturen: Bei "Checkdisk" wird in derselben Zeile eine Checkbox für Full (/r) und eine für Force (/f) angezeigt.
             elif group_name == "Reparaturen" and command_name == "Checkdisk":
                 row = [btn, sg.Checkbox("Full (/r)", key="-CHKDSK_FULL-"), sg.Checkbox("Force (/f)", key="-CHKDSK_FORCE-")]
             else:
@@ -170,7 +172,6 @@ def create_buttons(command_group, group_name):
             rows.append(row)
     return rows
 
-# Erstelle die Tabs für alle Kategorien
 tabs = []
 for group_name, command_group in command_groups.items():
     tab_layout = create_buttons(command_group, group_name)
@@ -192,7 +193,6 @@ layout = [
 window = sg.Window("PowerShell/CMD GUI", layout, element_justification='center', finalize=True)
 hover_bg = "#C1E1C1"
 
-# Binde Hover-Effekte an alle Buttons
 for group_name, command_group in command_groups.items():
     for command_name, command_info in command_group.items():
         key = command_name
@@ -210,16 +210,13 @@ for group_name, command_group in command_groups.items():
         except Exception as ex:
             print(f"Fehler beim Binden des Hover-Events für {key}: {ex}")
 
-# Funktion zum Ausführen eines Befehls in einem neuen Terminalfenster,
-# das nach Drücken der Enter-Taste beendet wird.
 def run_command(command, text, is_powershell=True, log_enabled=False):
     try:
         if log_enabled:
             log_filename = f"{text}_output.txt"
             if is_powershell:
                 full_cmd = (
-                    f'start "" powershell -NoExit -Command "{command} | Tee-Object -FilePath \'{log_filename}\'; '
-                    f'Read-Host -Prompt \'Press Enter to exit\'; exit"'
+                    f'start "" powershell -NoExit -Command "{command} | Tee-Object -FilePath \'{log_filename}\' | Out-String | ForEach-Object {{ ([string]$_).TrimEnd() }} | Out-Host; cmd /c pause; exit"'
                 )
             else:
                 full_cmd = (
@@ -227,20 +224,20 @@ def run_command(command, text, is_powershell=True, log_enabled=False):
                 )
         else:
             if is_powershell:
-                full_cmd = f'start "" powershell -NoExit -Command "{command}; Read-Host -Prompt \'Press Enter to exit\'; exit"'
+                full_cmd = (
+                    f'start "" powershell -NoExit -Command "{command} | Out-String | ForEach-Object {{ ([string]$_).TrimEnd() }} | Out-Host; cmd /c pause; exit"'
+                )
             else:
                 full_cmd = f'start "" cmd /c "{command} & pause & exit"'
         subprocess.Popen(full_cmd, shell=True)
     except Exception as e:
         sg.popup(f"Fehler beim Ausführen des Befehls: {e}", title="Fehler")
 
-# Event-Schleife
 while True:
     event, values = window.read()
     if event == sg.WIN_CLOSED or event == 'Exit':
         break
 
-    # Spezielle Behandlung für "Reparatur via WIM"
     if event == "Reparatur via WIM":
         wim_path = sg.popup_get_file("Wählen Sie eine WIM-Datei", file_types=(("WIM files", "*.wim"),))
         if wim_path:
@@ -252,16 +249,13 @@ while True:
                 sg.popup("Ungültiger Index!", title="Fehler")
         continue
 
-    # Alle anderen Befehle abarbeiten
     for group_name, command_group in command_groups.items():
         if event in command_group:
             command_data = command_group[event]
             cmd = command_data["command"]
-            # Spezielle Unterscheidung für "Bereinigen Komponenten-Speicher"
             if event == "Bereinigen Komponenten-Speicher":
                 if values.get("-SUPERSEDED-"):
                     cmd += " /ResetBase"
-            # Für "Checkdisk" in Reparaturen: Falls "Full" bzw. "Force" aktiviert sind, Parameter anhängen.
             if event == "Checkdisk":
                 if values.get("-CHKDSK_FULL-"):
                     cmd += " /r"
