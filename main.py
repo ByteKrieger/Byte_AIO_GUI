@@ -10,7 +10,6 @@ if not ctypes.windll.shell32.IsUserAnAdmin():
         "Möchten Sie das Programm jetzt als Administrator neu starten?"
     )
     if answer == "Yes":
-        # Neustart mit Administratorrechten
         ctypes.windll.shell32.ShellExecuteW(
             None, "runas", sys.executable, " ".join(sys.argv), None, 1
         )
@@ -20,7 +19,7 @@ if not ctypes.windll.shell32.IsUserAnAdmin():
 
 sg.theme('NeonYellow1')
 
-# Speichere das aktuelle Arbeitsverzeichnis (wird z. B. für FRST64 genutzt)
+# Speichere das aktuelle Arbeitsverzeichnis (z. B. für FRST64)
 working_dir = os.getcwd()
 
 # Farben
@@ -217,8 +216,7 @@ def run_command(command, text, is_powershell=True, log_enabled=False):
             log_filename = f"{text}_output.txt"
             if is_powershell:
                 full_cmd = (
-                    f'start "" powershell -NoExit -Command "{command} | Tee-Object -FilePath \'{log_filename}\' | ForEach-Object {{ if ($_ -is [string]) {{ $_.TrimEnd() }} else {{ $_ }} }} | Out-Host; '
-                    f'Read-Host -Prompt \'Press Enter to exit\'; exit"'
+                    f'start "" powershell -NoExit -Command "{command} | Tee-Object -FilePath \'{log_filename}\' | Out-String | ForEach-Object {{ ([string]$_).TrimEnd() }} | Out-Host; cmd /c pause; exit"'
                 )
             else:
                 full_cmd = (
@@ -227,8 +225,7 @@ def run_command(command, text, is_powershell=True, log_enabled=False):
         else:
             if is_powershell:
                 full_cmd = (
-                    f'start "" powershell -NoExit -Command "{command} | Out-String | ForEach-Object {{ if ($_ -is [string]) {{ $_.TrimEnd() }} else {{ $_ }} }} | Out-Host; '
-                    f'Read-Host -Prompt \'Press Enter to exit\'; exit"'
+                    f'start "" powershell -NoExit -Command "{command} | Out-String | ForEach-Object {{ ([string]$_).TrimEnd() }} | Out-Host; cmd /c pause; exit"'
                 )
             else:
                 full_cmd = f'start "" cmd /c "{command} & pause & exit"'
