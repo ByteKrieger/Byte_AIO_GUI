@@ -56,8 +56,6 @@ command_groups = {
             "requires_admin": False
         },
         "Exchange HealthCheck": {
-            # Hier wird die Datei von GitHub heruntergeladen und ausgeführt.
-            # Der Befehl ist nun als Administrator-Befehl markiert.
             "command": (
                 "if (Test-Path \"$env:TEMP\\ExchangeHealthCheck.ps1\") { Remove-Item \"$env:TEMP\\ExchangeHealthCheck.ps1\" -Force }; "
                 "Invoke-WebRequest -Uri \"https://github.com/microsoft/CSS-Exchange/releases/latest/download/HealthChecker.ps1\" -OutFile \"$env:TEMP\\ExchangeHealthCheck.ps1\"; "
@@ -99,28 +97,52 @@ command_groups = {
             "requires_admin": True
         }
     },
+    "Reparaturen": {
+        "SFC /scannow": {
+            "command": "sfc /scannow",
+            "is_powershell": False,
+            "requires_admin": True
+        },
+        "Checkdisk": {
+            "command": "chkdsk C:",
+            "is_powershell": False,
+            "requires_admin": True
+        },
+        "Printer Spooler reparieren": {
+            "command": "net stop spooler && net start spooler",
+            "is_powershell": False,
+            "requires_admin": True
+        },
+        "Explorer Neustarten": {
+            "command": "taskkill /f /im explorer.exe & start explorer.exe",
+            "is_powershell": False,
+            "requires_admin": False
+        }
+    },
     "weitere": {}
 }
 
 # Funktion zum Erstellen von Buttons für jede Registerkarte.
-# Hier wird zusätzlich der Gruppenname übergeben, um bei "DISM&Update" den Button "Bereinigen Komponenten-Speicher"
-# zusammen mit einer Checkbox in einer Zeile darzustellen.
+# Hier wird zusätzlich der Gruppenname übergeben, um bei "DISM&Update" und "Reparaturen"
+# entsprechende Checkboxen in derselben Zeile einzufügen.
 def create_buttons(command_group, group_name):
     rows = []
     if not command_group:
         rows.append([sg.Text("Keine Befehle definiert")])
     else:
         for command_name, command_info in command_group.items():
-            key = command_name  # Key entspricht dem reinen Befehlsnamen
+            key = command_name  # Reiner Befehlsname als Key
             if command_info.get("requires_admin"):
                 button_text = command_name + " *"
                 btn = sg.Button(button_text, auto_size_button=True, button_color=('red', 'black'), key=key)
             else:
                 btn = sg.Button(command_name, auto_size_button=True, button_color=(ORANGE, 'black'), key=key)
-            # Falls wir in der Kategorie DISM&Update sind und der Befehl "Bereinigen Komponenten-Speicher" lautet,
-            # wird in derselben Zeile eine Checkbox hinzugefügt.
+            # Für DISM&Update: Beim Befehl "Bereinigen Komponenten-Speicher" wird eine Checkbox hinzugefügt.
             if group_name == "DISM&Update" and command_name == "Bereinigen Komponenten-Speicher":
                 row = [btn, sg.Checkbox("Mit Superseeded (ResetBase)", key="-SUPERSEDED-")]
+            # Für Reparaturen: Bei "Checkdisk" wird in derselben Zeile eine Checkbox für Full (/r) und eine für Force (/f) angezeigt.
+            elif group_name == "Reparaturen" and command_name == "Checkdisk":
+                row = [btn, sg.Checkbox("Full (/r)", key="-CHKDSK_FULL-"), sg.Checkbox("Force (/f)", key="-CHKDSK_FORCE-")]
             else:
                 row = [btn]
             rows.append(row)
@@ -217,6 +239,12 @@ while True:
             if event == "Bereinigen Komponenten-Speicher":
                 if values.get("-SUPERSEDED-"):
                     cmd += " /ResetBase"
+            # Für "Checkdisk" in Reparaturen: Falls "Full" bzw. "Force" aktiviert sind, Parameter anhängen.
+            if event == "Checkdisk":
+                if values.get("-CHKDSK_FULL-"):
+                    cmd += " /r"
+                if values.get("-CHKDSK_FORCE-"):
+                    cmd += " /f"
             run_command(cmd, event, command_data["is_powershell"], values['-LOG-'])
 
 window.close()
