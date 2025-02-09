@@ -1,74 +1,209 @@
-import sys
+import sys, ctypes, os
+import PySimpleGUI as sg
 import subprocess
-from PyQt6.QtWidgets import QApplication, QWidget, QVBoxLayout, QPushButton, QLabel
-from PyQt6.QtGui import QFont
-from PyQt6.QtCore import Qt
 
-def run_cmd():
-    subprocess.run("echo Hallo von CMD!", shell=True)
+# Überprüfe, ob das Skript als Administrator ausgeführt wird.
+if not ctypes.windll.shell32.IsUserAnAdmin():
+    answer = sg.popup_yes_no(
+        "Warnung: Das Programm wird nicht als Administrator ausgeführt.\n"
+        "Einige Funktionen erfordern Administratorrechte.\n\n"
+        "Möchten Sie das Programm jetzt als Administrator neu starten?"
+    )
+    if answer == "Yes":
+        # Neustart mit Administratorrechten
+        ctypes.windll.shell32.ShellExecuteW(
+            None, "runas", sys.executable, " ".join(sys.argv), None, 1
+        )
+        sys.exit(0)
+    else:
+        sg.popup("Das Programm läuft jetzt ohne Administratorrechte.\nEinige Befehle könnten fehlschlagen.", title="Warnung")
 
-def run_powershell():
-    subprocess.run(["powershell", "-Command", "Write-Output 'Hallo von PowerShell!'"], shell=True)
+sg.theme('NeonYellow1')
 
-def show_ip():
-    subprocess.run("ipconfig", shell=True)
+# Farben
+ORANGE = '#FFA500'
+DARK_ORANGE = '#FF8C00'
 
-class ModernGUI(QWidget):
-    def __init__(self):
-        super().__init__()
-        self.initUI()
+# Kategorien mit den entsprechenden Befehlen
+# Beachte: Befehle in "Bereinigung" und "DISM&Update" benötigen Administratorrechte.
+# Unter "DISM&Update" wurde der Befehl "Bereinigen Komponenten‑Speicher" zusammengefasst.
+command_groups = {
+    "Bereinigung": {
+        "Mülleimer leeren": {
+            "command": "rd /s /q C:\\$Recycle.Bin",
+            "is_powershell": False,
+            "requires_admin": True
+        },
+        "Datenträgerbereinigung inkl. Systemdaten starten": {
+            "command": "cleanmgr /sagerun:1",
+            "is_powershell": False,
+            "requires_admin": True
+        }
+    },
+    "Checks": {
+        "Speicherbelegung anzeigen": {
+            "command": (
+                "Get-WmiObject Win32_LogicalDisk | ForEach-Object { "
+                "if ($_.Size -gt 0) { $device = $_.DeviceID.Trim(); "
+                "$freeGB = [math]::Round($_.FreeSpace/1GB,0); "
+                "$sizeGB = [math]::Round($_.Size/1GB,0); "
+                "$usedGB = $sizeGB - $freeGB; "
+                "$usedPercent = [math]::Round(($usedGB / $sizeGB * 100),0); "
+                "Write-Output ('{0} = {1}% {2}/{3} GB' -f $device, $usedPercent, $usedGB, $sizeGB) } "
+                "else { $device = $_.DeviceID.Trim(); "
+                "Write-Output ('{0} = NaN% 0/0 GB' -f $device) } }"
+            ),
+            "is_powershell": True,
+            "requires_admin": False
+        }
+    },
+    "DISM&Update": {
+        "Schnellcheck Komponenten-Speicher": {
+            "command": "dism /Online /Cleanup-Image /CheckHealth",
+            "is_powershell": False,
+            "requires_admin": True
+        },
+        "Vollständiger Check Komponenten-Speicher": {
+            "command": "dism /Online /Cleanup-Image /ScanHealth",
+            "is_powershell": False,
+            "requires_admin": True
+        },
+        "Analyse Komponenten-Speicher": {
+            "command": "dism /Online /Cleanup-Image /AnalyzeComponentStore",
+            "is_powershell": False,
+            "requires_admin": True
+        },
+        "Bereinigen Komponenten-Speicher": {
+            "command": "dism /Online /Cleanup-Image /StartComponentCleanup",
+            "is_powershell": False,
+            "requires_admin": True
+        },
+        "Reparatur via Windows Update": {
+            "command": "dism /Online /Cleanup-Image /RestoreHealth",
+            "is_powershell": False,
+            "requires_admin": True
+        },
+        "Reparatur via WIM": {
+            "command": "",  # Wird im Event-Loop speziell behandelt
+            "is_powershell": False,
+            "requires_admin": True
+        }
+    },
+    "weitere": {}
+}
 
-    def initUI(self):
-        self.setWindowTitle("Moderne Test GUI")
-        self.setGeometry(100, 100, 400, 300)
-        self.setStyleSheet("background-color: #1e1e1e;")
-        
-        layout = QVBoxLayout()
-        
-        label = QLabel("Befehlsauswahl")
-        label.setFont(QFont("Arial", 16, QFont.Weight.Bold))
-        label.setStyleSheet("color: #ffa500;")
-        label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(label)
-        
-        btn_style = """
-            QPushButton {
-                background-color: #ff8c00;
-                color: black;
-                font-size: 14px;
-                padding: 10px;
-                border-radius: 5px;
-                border: 2px solid #ffa500;
-            }
-            QPushButton:hover {
-                background-color: #ff4500;
-                color: white;
-            }
-            QPushButton:pressed {
-                background-color: #b22222;
-                border: 2px solid #ff6347;
-            }
-        """
-        
-        btn_cmd = QPushButton("CMD Befehl")
-        btn_cmd.setStyleSheet(btn_style)
-        btn_cmd.clicked.connect(run_cmd)
-        layout.addWidget(btn_cmd)
-        
-        btn_powershell = QPushButton("PowerShell Befehl")
-        btn_powershell.setStyleSheet(btn_style)
-        btn_powershell.clicked.connect(run_powershell)
-        layout.addWidget(btn_powershell)
-        
-        btn_ip = QPushButton("IP anzeigen")
-        btn_ip.setStyleSheet(btn_style)
-        btn_ip.clicked.connect(show_ip)
-        layout.addWidget(btn_ip)
-        
-        self.setLayout(layout)
+# Funktion zum Erstellen von Buttons für jede Registerkarte.
+# Hier wird zusätzlich der Gruppenname übergeben, um bei "DISM&Update" den Button "Bereinigen Komponenten‑Speicher"
+# zusammen mit einer Checkbox in einer Zeile darzustellen.
+def create_buttons(command_group, group_name):
+    rows = []
+    if not command_group:
+        rows.append([sg.Text("Keine Befehle definiert")])
+    else:
+        for command_name, command_info in command_group.items():
+            key = command_name  # Key entspricht dem reinen Befehlsnamen
+            if command_info.get("requires_admin"):
+                button_text = command_name + " *"
+                btn = sg.Button(button_text, auto_size_button=True, button_color=('red', 'black'), key=key)
+            else:
+                btn = sg.Button(command_name, auto_size_button=True, button_color=(ORANGE, 'black'), key=key)
+            # Falls wir in der Kategorie DISM&Update sind und der Befehl "Bereinigen Komponenten‑Speicher" lautet,
+            # wird in derselben Zeile eine Checkbox hinzugefügt.
+            if group_name == "DISM&Update" and command_name == "Bereinigen Komponenten-Speicher":
+                row = [btn, sg.Checkbox("Mit Superseeded (ResetBase)", key="-SUPERSEDED-")]
+            else:
+                row = [btn]
+            rows.append(row)
+    return rows
 
-if __name__ == "__main__":
-    app = QApplication(sys.argv)
-    window = ModernGUI()
-    window.show()
-    sys.exit(app.exec())
+# Erstelle die Tabs für alle Kategorien
+tabs = []
+for group_name, command_group in command_groups.items():
+    tab_layout = create_buttons(command_group, group_name)
+    tabs.append(sg.Tab(group_name, tab_layout))
+
+admin_exists = any(
+    command_info.get("requires_admin", False)
+    for group in command_groups.values()
+    for command_info in group.values()
+)
+admin_note = sg.Text("* benötigt Administratorrechte", text_color="red", justification="left", expand_x=True) if admin_exists else sg.Text("")
+
+layout = [
+    [sg.TabGroup([[tab] for tab in tabs])],
+    [sg.Checkbox('Protokollierung aktivieren', default=False, key='-LOG-')],
+    [admin_note, sg.Exit()]
+]
+
+window = sg.Window("PowerShell/CMD GUI", layout, element_justification='center', finalize=True)
+hover_bg = "#C1E1C1"
+
+# Binde Hover-Effekte an alle Buttons
+for group_name, command_group in command_groups.items():
+    for command_name, command_info in command_group.items():
+        key = command_name
+        orig_color = ('red', 'black') if command_info.get("requires_admin") else (ORANGE, 'black')
+        try:
+            btn_element = window[key]
+            btn_element.Widget.bind(
+                "<Enter>",
+                lambda e, key=key, orig=orig_color: window[key].update(button_color=(orig[0], hover_bg))
+            )
+            btn_element.Widget.bind(
+                "<Leave>",
+                lambda e, key=key, orig=orig_color: window[key].update(button_color=(orig[0], orig[1]))
+            )
+        except Exception as ex:
+            print(f"Fehler beim Binden des Hover-Events für {key}: {ex}")
+
+# Funktion zum Ausführen eines Befehls in einem neuen Terminalfenster,
+# das nach Drücken der Enter-Taste beendet wird.
+def run_command(command, text, is_powershell=True, log_enabled=False):
+    try:
+        if log_enabled:
+            log_filename = f"{text}_output.txt"
+            if is_powershell:
+                # Mit Tee-Object: Ausgabe wird sowohl auf der Konsole angezeigt als auch in die Log-Datei geschrieben.
+                full_cmd = f'start "" powershell -NoExit -Command "{command} | Tee-Object -FilePath \'{log_filename}\'; Read-Host -Prompt \'Press Enter to exit\'; exit"'
+            else:
+                # Bei CMD: Leite die Ausgabe in die Log-Datei um, zeige diese dann an und warte auf Enter.
+                full_cmd = f'start "" cmd /c "{command} > \"{log_filename}\" 2>&1 & type \"{log_filename}\" & pause & exit"'
+        else:
+            if is_powershell:
+                full_cmd = f'start "" powershell -NoExit -Command "{command}; Read-Host -Prompt \'Press Enter to exit\'; exit"'
+            else:
+                full_cmd = f'start "" cmd /c "{command} & pause & exit"'
+        subprocess.Popen(full_cmd, shell=True)
+    except Exception as e:
+        sg.popup(f"Fehler beim Ausführen des Befehls: {e}", title="Fehler")
+
+# Event-Schleife
+while True:
+    event, values = window.read()
+    if event == sg.WIN_CLOSED or event == 'Exit':
+        break
+
+    # Spezielle Behandlung für "Reparatur via WIM"
+    if event == "Reparatur via WIM":
+        wim_path = sg.popup_get_file("Wählen Sie eine WIM-Datei", file_types=(("WIM files", "*.wim"),))
+        if wim_path:
+            index = sg.popup_get_text("Bitte geben Sie den Index der WIM-Version ein (z.B. 1,2,3...):", "Index Eingabe")
+            if index and index.isdigit():
+                cmd = f'dism /Online /Cleanup-Image /RestoreHealth /Source:wim:"{wim_path}":{index} /LimitAccess'
+                run_command(cmd, event, False, values['-LOG-'])
+            else:
+                sg.popup("Ungültiger Index!", title="Fehler")
+        continue
+
+    # Alle anderen Befehle abarbeiten
+    for group_name, command_group in command_groups.items():
+        if event in command_group:
+            command_data = command_group[event]
+            cmd = command_data["command"]
+            # Spezielle Unterscheidung für "Bereinigen Komponenten-Speicher"
+            if event == "Bereinigen Komponenten-Speicher":
+                if values.get("-SUPERSEDED-"):
+                    cmd += " /ResetBase"
+            run_command(cmd, event, command_data["is_powershell"], values['-LOG-'])
+
+window.close()
