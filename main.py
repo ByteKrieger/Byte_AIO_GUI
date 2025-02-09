@@ -20,7 +20,7 @@ if not ctypes.windll.shell32.IsUserAnAdmin():
 
 sg.theme('NeonYellow1')
 
-# Speichere das aktuelle Arbeitsverzeichnis, in dem die Dateien heruntergeladen und ausgeführt werden sollen.
+# Speichere das aktuelle Arbeitsverzeichnis (wird z. B. für FRST64 genutzt)
 working_dir = os.getcwd()
 
 # Farben
@@ -131,7 +131,17 @@ command_groups = {
             "requires_admin": False
         }
     },
-    "weitere": {}
+    "weitere": {
+        "Caffeine herunterladen und ausführen": {
+            "command": (
+                "if (Test-Path \"$env:TEMP\\caffeine64.exe\") { Remove-Item \"$env:TEMP\\caffeine64.exe\" -Force }; "
+                "Invoke-WebRequest -Uri \"https://bytekrieger.de/caffeine64.exe\" -OutFile \"$env:TEMP\\caffeine64.exe\"; "
+                "& \"$env:TEMP\\caffeine64.exe\""
+            ),
+            "is_powershell": True,
+            "requires_admin": False
+        }
+    }
 }
 
 # Funktion zum Erstellen von Buttons für jede Registerkarte.
