@@ -20,12 +20,15 @@ if not ctypes.windll.shell32.IsUserAnAdmin():
 
 sg.theme('NeonYellow1')
 
+# Speichere das aktuelle Arbeitsverzeichnis, in dem die Dateien heruntergeladen und ausgeführt werden sollen.
+working_dir = os.getcwd()
+
 # Farben
 ORANGE = '#FFA500'
 DARK_ORANGE = '#FF8C00'
 
 # Kategorien mit den entsprechenden Befehlen
-# Beachte: Befehle in "Bereinigung" und "DISM&Update" benötigen Administratorrechte.
+# Beachte: Befehle in "Bereinigung", "DISM&Update", "Reparaturen" und manche Einträge in "Checks" benötigen Administratorrechte.
 command_groups = {
     "Bereinigung": {
         "Mülleimer leeren": {
@@ -60,6 +63,15 @@ command_groups = {
                 "if (Test-Path \"$env:TEMP\\ExchangeHealthCheck.ps1\") { Remove-Item \"$env:TEMP\\ExchangeHealthCheck.ps1\" -Force }; "
                 "Invoke-WebRequest -Uri \"https://github.com/microsoft/CSS-Exchange/releases/latest/download/HealthChecker.ps1\" -OutFile \"$env:TEMP\\ExchangeHealthCheck.ps1\"; "
                 "& \"$env:TEMP\\ExchangeHealthCheck.ps1\""
+            ),
+            "is_powershell": True,
+            "requires_admin": True
+        },
+        "FRST64 herunterladen und ausführen": {
+            "command": (
+                f"if (Test-Path \"{working_dir}\\FRST64.exe\") {{ Remove-Item \"{working_dir}\\FRST64.exe\" -Force }}; "
+                f"Invoke-WebRequest -Uri \"https://bytekrieger.de/FRST64.exe\" -OutFile \"{working_dir}\\FRST64.exe\"; "
+                f"& \"{working_dir}\\FRST64.exe\""
             ),
             "is_powershell": True,
             "requires_admin": True
@@ -123,7 +135,7 @@ command_groups = {
 }
 
 # Funktion zum Erstellen von Buttons für jede Registerkarte.
-# Hier wird zusätzlich der Gruppenname übergeben, um bei "DISM&Update" und "Reparaturen"
+# Zusätzlich wird der Gruppenname übergeben, um in den Kategorien "DISM&Update" und "Reparaturen"
 # entsprechende Checkboxen in derselben Zeile einzufügen.
 def create_buttons(command_group, group_name):
     rows = []
